@@ -1,0 +1,905 @@
+{
+  "name": "Main orchestration workflow",
+  "nodes": [
+    {
+      "parameters": {
+        "options": {
+          "responseMode": "responseNodes"
+        }
+      },
+      "type": "@n8n/n8n-nodes-langchain.chatTrigger",
+      "typeVersion": 1.4,
+      "position": [
+        -64,
+        64
+      ],
+      "id": "530f0384-96cb-4c10-99e3-216805d566bd",
+      "name": "When chat message received",
+      "webhookId": "ceb386d1-dfef-4b22-b38e-e7cb41db97e1"
+    },
+    {
+      "parameters": {
+        "model": "moonshotai/kimi-k2-instruct",
+        "options": {
+          "maxTokensToSample": 700,
+          "temperature": 0
+        }
+      },
+      "type": "@n8n/n8n-nodes-langchain.lmChatGroq",
+      "typeVersion": 1,
+      "position": [
+        464,
+        176
+      ],
+      "id": "a7ed19e8-5e86-42ed-9532-3dd008cffd81",
+      "name": "Groq Chat Model1",
+      "credentials": {
+        "groqApi": {
+          "id": "1btJUqayODj2irtT",
+          "name": "Groq account 2"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "/**\n * Validator & Missing Field Detector\n * \n * Checks if validated_fields contains:\n * - fund_house\n * - fund_type\n * - fees_details\n * \n * If all three are present (not null/undefined), is_complete = true\n * If any is missing, is_complete = false\n */\n\nconst item = items[0].json;\n\n// Read validated_fields\nconst validated_fields = item.validated_fields || {};\n\n// Required fields to check\nconst REQUIRED_FIELDS = ['fund_house', 'fund_type', 'fees_details'];\n\n// Field definitions for missing field messages\nconst FIELD_DEFS = {\n  fund_house: {\n    friendlyName: \"Fund house\",\n    clarifyingQuestion: \"Which fund house is this? (e.g., SBI, HDFC, ICICI)\",\n    example: \"SBI\"\n  },\n  fund_type: {\n    friendlyName: \"Fund type\",\n    clarifyingQuestion: \"Is it ELSS, Equity, Debt, Hybrid, or Liquid?\",\n    example: [\"ELSS\", \"Equity\", \"Debt\", \"Hybrid\", \"Liquid\"]\n  },\n  fees_details: {\n    friendlyName: \"Fees details\",\n    clarifyingQuestion: \"What fee-related information do you need? (e.g., Exit load, Expense ratio, Entry Load, Transaction Charge)\",\n    example: \"Exit load\"\n  }\n};\n\n// Detect missing fields\nconst missing_fields = [];\n\nfor (const fieldKey of REQUIRED_FIELDS) {\n  const value = validated_fields[fieldKey];\n  \n  // Check if field is missing (null, undefined, or empty string)\n  if (value === undefined || value === null || value === '') {\n    const def = FIELD_DEFS[fieldKey];\n    missing_fields.push({\n      key: fieldKey,\n      friendlyName: def.friendlyName,\n      clarifyingQuestion: def.clarifyingQuestion,\n      example: def.example\n    });\n  }\n}\n\n// Determine if complete (all three fields present)\nconst is_complete = missing_fields.length === 0;\n\n// Return output\nreturn [{\n  json: {\n    ...item,\n    missing_fields,\n    is_complete: is_complete\n  }\n}];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1856,
+        -32
+      ],
+      "id": "63cbac8c-fde8-41dc-866e-c54b8cccc6fa",
+      "name": "Validator"
+    },
+    {
+      "parameters": {
+        "jsCode": "const text = ($json.chatInput || \"\").trim();\n\nreturn {\n  json: {\n    sessionId: $json.sessionId,\n    chatInput: text,\n    originalMessage: text,\n    normalizedMessage: text.toLowerCase()\n  }\n};\n"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        160,
+        64
+      ],
+      "id": "6264f477-176e-42c9-8170-ff8fb5b1b361",
+      "name": "Normalizer"
+    },
+    {
+      "parameters": {
+        "promptType": "define",
+        "text": "=You are an information extraction engine for an Indian mutual fund assistant.\n\nYour ONLY responsibility is to analyze the CURRENT user message\nand extract intent and entities explicitly present in that message.\n\nYou do NOT:\n- remember previous messages\n- access or rely on conversation memory\n- merge with past information\n- infer missing details from earlier turns\n- answer the user\n- ask questions\n\nYou operate on the current message in isolation.\n\n========================\nINTENT CLASSIFICATION\n========================\n\nClassify intent into ONE of the following values,\nbased ONLY on the current user message:\n\n- fees_charges: User is asking about fees, charges, loads, expense ratios, or costs\n- comparison: User wants to compare funds, schemes, or features\n- cancellation: User wants to cancel SIP, mandate, or investment\n- sip_mandate: User is asking about SIP mandate fees, setup, or related processes\n- fund_rules: User is asking about fund rules, lock-in periods, or regulations\n- general_info: General questions about mutual funds (not fees-specific)\n- unknown: Intent cannot be determined from this message alone\n\nIf intent cannot be confidently determined\nfrom this message alone, return \"unknown\".\n\n========================\nENTITY EXTRACTION\n========================\n\nExtract entities ONLY if they are:\n- directly mentioned in the message, OR\n- unambiguously implied in the same message\n\nDo NOT guess.\nDo NOT infer from prior conversation.\nDo NOT fill missing values.\n\nIf an entity is not present in the message,\nreturn null.\n\nCanonical entity schema:\n\n1. fund_house\n   Extract the Asset Management Company (AMC) or fund house name.\n   Examples: SBI, HDFC, ICICI, Axis, Kotak, Kotak Mahindra, Reliance, Aditya Birla, DSP, Franklin, UTI, Tata, Mirae, Nippon, IDFC, L&T, Canara Robeco, Sundaram, Invesco, PGIM, Quant, Bandhan, Edelweiss, HSBC, Union, Quantum, Shriram, IIFL, BNP Paribas, Sahara, ITI, Motilal Oswal, Baroda BNP Paribas, Mahindra Manulife, Samco, Taurus, PPFAS, Whiteoak, Franklin Templeton, NJ, JM, 360 One\n   \n   Handle variations:\n   - \"Kotak\" or \"Kotak Mahindra\" → \"Kotak Mahindra\"\n   - \"Aditya Birla\" or \"Birla Sun Life\" → \"Aditya Birla\"\n   - \"SBI Mutual Fund\" → \"SBI\"\n   - Extract only the fund house name, not \"Mutual Fund\" suffix\n\n2. fund_type\n   Extract the type or category of mutual fund scheme.\n   Allowed values ONLY (case-sensitive):\n   - ELSS\n   - Equity\n   - Debt\n   - Hybrid\n   - Liquid\n   \n   Mappings (map to canonical values):\n   - \"tax saver\", \"ELSS\", \"equity linked savings scheme\" → ELSS\n   - \"large cap\", \"mid cap\", \"small cap\", \"multi cap\", \"flexi cap\", \"focused\", \"value\", \"contra\", \"sector\", \"thematic\", \"dividend yield\", \"momentum\" → Equity\n   - \"balanced\", \"aggressive hybrid\", \"conservative hybrid\", \"dynamic asset allocation\", \"multi asset\", \"arbitrage\", \"equity savings\" → Hybrid\n   - \"bond\", \"gilt\", \"corporate bond\", \"credit risk\", \"banking and PSU\", \"money market\", \"overnight\", \"ultra short\", \"low duration\", \"medium duration\", \"dynamic bond\", \"floater\" → Debt\n   - \"liquid\", \"liquid fund\" → Liquid\n   \n   If multiple fund types are mentioned, extract the primary one.\n   If unclear, return null.\n\n3. fees_details\n   Extract the specific fee-related term mentioned by the user.\n   Allowed values ONLY (case-sensitive, exact match):\n   - \"Expense ratio\"\n   - \"Exit load\"\n   - \"Entry Load\"\n   - \"Transaction Charge\"\n   \n   Mappings:\n   - \"expense ratio\", \"TER\", \"total expense ratio\", \"management fee\", \"AMC charges\" → \"Expense ratio\"\n   - \"exit load\", \"redemption charge\", \"exit fee\", \"withdrawal charge\" → \"Exit load\"\n   - \"entry load\", \"front-end load\", \"sales charge\", \"entry fee\" → \"Entry Load\"\n   - \"transaction charge\", \"transaction fee\", \"brokerage\", \"DP charges\", \"SIP mandate fees\", \"SIP cancellation charges\" → \"Transaction Charge\"\n   \n   Extract only ONE fees_detail per message.\n   If multiple fees are mentioned, extract the primary one.\n   If no fee-related term is present, return null.\n\n========================\nSTRICT OUTPUT FORMAT\n========================\n\nReturn ONLY valid JSON.\nNo markdown.\nNo explanations.\nNo additional text.\nNo trailing commas.\n\n{\n  \"intent\": \"fees_charges\",\n  \"extracted_entities\": {\n    \"fund_house\": \"SBI\",\n    \"fund_type\": \"Equity\",\n    \"fees_details\": \"Exit load\"\n  }\n}\n\nExample outputs:\n\nInput: \"What is the exit load for SBI Large Cap Fund?\"\nOutput:\n{\n  \"intent\": \"fees_charges\",\n  \"extracted_entities\": {\n    \"fund_house\": \"SBI\",\n    \"fund_type\": \"Equity\",\n    \"fees_details\": \"Exit load\"\n  }\n}\n\nInput: \"Tell me about HDFC Hybrid Fund expense ratio\"\nOutput:\n{\n  \"intent\": \"fees_charges\",\n  \"extracted_entities\": {\n    \"fund_house\": \"HDFC\",\n    \"fund_type\": \"Hybrid\",\n    \"fees_details\": \"Expense ratio\"\n  }\n}\n\nInput: \"What are mutual funds?\"\nOutput:\n{\n  \"intent\": \"general_info\",\n  \"extracted_entities\": {\n    \"fund_house\": null,\n    \"fund_type\": null,\n    \"fees_details\": null\n  }\n}\n\nInput: \"ICICI liquid fund transaction charges\"\nOutput:\n{\n  \"intent\": \"fees_charges\",\n  \"extracted_entities\": {\n    \"fund_house\": \"ICICI\",\n    \"fund_type\": \"Liquid\",\n    \"fees_details\": \"Transaction Charge\"\n  }\n}\n\n========================\nUSER MESSAGE\n========================\n\n{{$json.chatInput}}",
+        "options": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.agent",
+      "typeVersion": 3,
+      "position": [
+        384,
+        -64
+      ],
+      "id": "039c1763-a7b7-420d-9f6b-8ba5cd17e6f2",
+      "name": "AI Agent"
+    },
+    {
+      "parameters": {
+        "jsCode": "const raw = items[0].json.output;\n\nif (!raw) {\n  throw new Error(\"AI Agent output is missing\");\n}\n\nlet parsed;\ntry {\n  parsed = typeof raw === \"string\" ? JSON.parse(raw) : raw;\n} catch (e) {\n  throw new Error(\"Failed to parse AI Agent output JSON\");\n}\n\nreturn [\n  {\n    json: {\n      ...items[0].json,\n      intent: parsed.intent || \"unknown\",\n      extracted_entities: parsed.extracted_entities || {}\n    }\n  }\n];\n"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        736,
+        -64
+      ],
+      "id": "7aae3433-bee6-4a67-b4c6-ff97b16d94cc",
+      "name": "Parse Agent Output"
+    },
+    {
+      "parameters": {
+        "jsCode": "const prev = items[0].json.validated_fields || {};\nconst curr = items[0].json.extracted_entities || {};\n\nconst merged = { ...prev };\n\nfor (const key of Object.keys(curr)) {\n  if (curr[key] !== null && curr[key] !== undefined) {\n    merged[key] = curr[key];\n  }\n}\n\nreturn [{\n  json: {\n    ...items[0].json,\n    validated_fields: merged\n  }\n}];\n"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1632,
+        64
+      ],
+      "id": "796d239b-7409-4e0b-82fc-8a775a7f8583",
+      "name": "State Merger Code"
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT state\nFROM public.chat_session_state\nWHERE session_id = '{{$json.sessionId}}';\n",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        1184,
+        64
+      ],
+      "id": "2da05347-a5d8-406a-8320-190f27f137a9",
+      "name": "Load session state",
+      "alwaysOutputData": true,
+      "credentials": {
+        "postgres": {
+          "id": "SgQ3mlQ2HbUmBohD",
+          "name": "Postgres account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "// 1. Read rows returned by Postgres\nlet state = {};\n\nif (items.length > 0 && items[0].json && items[0].json.state) {\n  state = items[0].json.state;\n}\n\n// 2. Reattach original session context\nconst base = $node[\"Merge\"].json;\n\n// 3. Emit a single combined item\nreturn [{\n  json: {\n    ...base,\n    validated_fields: state\n  }\n}];\n"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1408,
+        64
+      ],
+      "id": "4a3f60e8-2c3c-4b75-9ca5-0821891c8933",
+      "name": "Normalise DB state"
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "INSERT INTO public.chat_session_state (session_id, state)\nVALUES (\n  '{{$json.sessionId}}',\n  '{{ JSON.stringify($json.validated_fields) }}'::jsonb\n)\nON CONFLICT (session_id)\nDO UPDATE SET\n  state = EXCLUDED.state,\n  updated_at = now();\n",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        1856,
+        160
+      ],
+      "id": "af7c8e2e-4c68-42b7-9b49-4f29e29b5349",
+      "name": "Execute a SQL query",
+      "credentials": {
+        "postgres": {
+          "id": "SgQ3mlQ2HbUmBohD",
+          "name": "Postgres account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "mode": "combine",
+        "combineBy": "combineByPosition",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.merge",
+      "typeVersion": 3.2,
+      "position": [
+        960,
+        64
+      ],
+      "id": "e80d01e0-bd6f-41a8-aa1a-15fe3247dbd8",
+      "name": "Merge"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "5fd66990-7b70-47d5-bb6f-30a4653754ea",
+              "leftValue": "={{ $json.missing_fields.length }}\n",
+              "rightValue": "=0",
+              "operator": {
+                "type": "number",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "looseTypeValidation": true,
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [
+        2080,
+        -32
+      ],
+      "id": "02756fa0-e9c5-4661-a125-56d72f022a96",
+      "name": "If"
+    },
+    {
+      "parameters": {
+        "jsCode": "const item = $json;\n\n// Get all missing fields (not just the first one)\nconst missingFields = item.missing_fields || [];\n\n// Extract information for all missing fields\nconst missingFieldsInfo = missingFields.map(missing => ({\n  key: missing.key || null,\n  friendlyName: missing.friendlyName || null,\n  clarifyingQuestion: missing.clarifyingQuestion || null,\n  example: missing.example || null\n}));\n\n// Get all missing keys as an array\nconst missingKeys = missingFields.map(m => m.key).filter(Boolean);\n\n// Get all missing key labels\nconst missingKeyLabels = missingFields.map(m => m.friendlyName).filter(Boolean);\n\n// Get all reference questions\nconst referenceQuestions = missingFields.map(m => m.clarifyingQuestion).filter(Boolean);\n\n// Get all examples (flatten if needed)\nconst allExamples = missingFields.map(m => m.example).filter(Boolean);\n\nreturn [\n  {\n    json: {\n      intent: item.intent,\n      originalMessage: item.originalMessage || item.chatInput,\n      // Single missing field info (for backward compatibility)\n      missing_key: missingFields[0]?.key || null,\n      missing_key_label: missingFields[0]?.friendlyName || null,\n      reference_question: missingFields[0]?.clarifyingQuestion || null,\n      examples: missingFields[0]?.example || [],\n      // All missing fields info (new)\n      missing_fields: missingFieldsInfo,\n      missing_keys: missingKeys,\n      missing_key_labels: missingKeyLabels,\n      reference_questions: referenceQuestions,\n      all_examples: allExamples,\n      missing_count: missingFields.length,\n      fund_house: item.validated_fields?.fund_house || null,\n      fund_type: item.validated_fields?.fund_type || null,\n      fees_details: item.validated_fields?.fees_details || null\n    }\n  }\n];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2304,
+        176
+      ],
+      "id": "9340ac23-c4c3-497a-9b69-9af2228dbc1f",
+      "name": "Parse missing fields"
+    },
+    {
+      "parameters": {
+        "model": "moonshotai/kimi-k2-instruct",
+        "options": {
+          "maxTokensToSample": 80,
+          "temperature": 0
+        }
+      },
+      "type": "@n8n/n8n-nodes-langchain.lmChatGroq",
+      "typeVersion": 1,
+      "position": [
+        2656,
+        400
+      ],
+      "id": "ce372f6e-ed9a-4336-b1e1-ea6cc3bdf2d1",
+      "name": "Groq Chat Model",
+      "credentials": {
+        "groqApi": {
+          "id": "1btJUqayODj2irtT",
+          "name": "Groq account 2"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "message": "=={{ $json.response}}\n",
+        "waitUserReply": false,
+        "options": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.chat",
+      "typeVersion": 1,
+      "position": [
+        3216,
+        176
+      ],
+      "id": "7f902da8-bd2c-49df-9dfd-64e925e47443",
+      "name": "Respond to Chat"
+    },
+    {
+      "parameters": {
+        "model": "moonshotai/kimi-k2-instruct",
+        "options": {
+          "temperature": 0
+        }
+      },
+      "type": "@n8n/n8n-nodes-langchain.lmChatGroq",
+      "typeVersion": 1,
+      "position": [
+        2528,
+        -112
+      ],
+      "id": "7c4acd9a-80a5-42c3-836e-5b6d7d670fb6",
+      "name": "Groq Chat Model2",
+      "credentials": {
+        "groqApi": {
+          "id": "1btJUqayODj2irtT",
+          "name": "Groq account 2"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "promptType": "define",
+        "text": "=={{ `Missing Information Required:\n${$json.missing_fields.map(m => `- ${m.friendlyName}: ${m.clarifyingQuestion} (Examples: ${Array.isArray(m.example) ? m.example.join(', ') : m.example})`).join('\\n')}\n\nCurrent Context:\n- User Query: ${$json.originalMessage}\n- Fund House: ${$json.fund_house || 'Not provided'}\n- Missing Fields: ${$json.missing_key_labels.join(', ')}\n\nGenerate a single, natural question to ask for all missing information.` }}",
+        "options": {
+          "systemMessage": "You are a helpful and friendly mutual fund advisor assistant.\n\nYour task is to generate a SINGLE, natural, conversational question that asks the user for ALL missing information at once.\n\n–––––––––––––––––\nYOUR INPUT CONTAINS\n–––––––––––––––––\n\nThe input message contains:\n- List of missing fields with their friendly names\n- Reference questions for each missing field\n- Examples for each missing field\n- Current context (what the user already asked, what information is already known)\n\n–––––––––––––––––\nYOUR TASK\n–––––––––––––––––\n\nGenerate ONE question that:\n1. Acknowledges what the user asked\n2. Asks for ALL missing fields in a natural, conversational way\n3. References the examples provided (if available)\n4. Sounds friendly and helpful, not robotic\n5. Combines all missing information requests into a single question\n\n–––––––––––––––––\nRULES\n–––––––––––––––––\n\n- Generate ONLY ONE question - do not ask multiple questions\n- Make it conversational and natural\n- Include examples from the reference questions\n- Acknowledge the user's original query\n- Be friendly and helpful\n- Do not use bullet points or lists\n- Do not say \"I need\" or \"Please provide\" - be more conversational\n\n–––––––––––––––––\nOUTPUT FORMAT\n–––––––––––––––––\n\nOutput ONLY the question itself. No explanations, no additional text, just the question."
+        }
+      },
+      "type": "@n8n/n8n-nodes-langchain.agent",
+      "typeVersion": 3,
+      "position": [
+        2592,
+        176
+      ],
+      "id": "b10478c8-dbbf-4b33-867e-d7972818ae24",
+      "name": "Clarifying Question"
+    },
+    {
+      "parameters": {
+        "promptType": "define",
+        "text": "={{ $json.formattedText }}",
+        "options": {
+          "systemMessage": "ou are a retrieval-augmented generation (RAG) agent for mutual fund fees information.\n\n–––––––––––––––––\nYOUR USER MESSAGE CONTAINS THE DATA\n–––––––––––––––––\n\nThe USER MESSAGE you receive contains the extracted entities in this format:\n\nFund House: SBI\nFund Type: Equity\nFees Details: Exit load\nOriginal Message: sbi mutual fund equity exit load\n\nREAD THE VALUES FROM THE USER MESSAGE.\n\n–––––––––––––––––\nSTEP-BY-STEP PROCESS\n–––––––––––––––––\n\nStep 1: Extract Query from User Message\n- Read the user message\n- Extract: fund_house, fund_type, fees_details\n- Build query: fund_house + \" \" + fund_type + \" fund \" + fees_details\n- Example: \"SBI Equity fund Exit load\"\n\nStep 2: Generate Embedding\n- Use the \"generate_embedding\" tool with the query text\n- Input: {\"query\": \"SBI Equity fund Exit load\"}\n- Output: {\"embedding\": [0.1, 0.2, ...], \"dimension\": 384}\n- Extract the embedding array from the response\n\nStep 3: Query Pinecone\n- Use the \"query_pinecone\" tool with the embedding vector\n- Input: {\"embedding\": [0.1, 0.2, ...], \"topK\": 5}\n- Output: {\"matches\": [...]}\n- Extract the matches array\n\nStep 4: Generate Answer\n- Read ALL matches from Pinecone\n- Extract facts from metadata.text\n- Get source URLs from metadata.source or metadata.url\n- Generate EXACTLY 6 bullet points\n- Format: • [fact] (source_url)\n\n–––––––––––––––––\nTOOLS AVAILABLE\n–––––––––––––––––\n\n1. generate_embedding\n   - Purpose: Convert text query to embedding vector\n   - Input: {\"query\": \"text query here\"}\n   - Output: {\"embedding\": [array of numbers], \"dimension\": 384}\n   - Usage: Call this FIRST with your query text\n\n2. query_pinecone\n   - Purpose: Search Pinecone with embedding vector\n   - Input: {\"embedding\": [array from generate_embedding], \"topK\": 5}\n   - Output: {\"matches\": [array of documents with metadata]}\n   - Usage: Call this SECOND with the embedding from tool 1\n\n–––––––––––––––––\nWORKFLOW EXAMPLE\n–––––––––––––––––\n\nUser Message: \"Fund House: SBI\\nFund Type: Equity\\nFees Details: Exit load\"\n\nYour Actions:\n1. Extract: fund_house=\"SBI\", fund_type=\"Equity\", fees_details=\"Exit load\"\n2. Build query: \"SBI Equity fund Exit load\"\n3. Call generate_embedding({\"query\": \"SBI Equity fund Exit load\"})\n4. Get embedding: [0.1, 0.2, ...]\n5. Call query_pinecone({\"embedding\": [0.1, 0.2, ...], \"topK\": 5})\n6. Get matches: [{metadata: {text: \"...\", source: \"...\"}}, ...]\n7. Generate 6 bullets with facts and source URLs\n\n–––––––––––––––––\nOUTPUT FORMAT\n–––––––––––––––––\n\nGenerate exactly 6 bullet points:\n• [Fact 1] (https://source-url.com)\n• [Fact 2] (https://source-url.com)\n• [Fact 3] (https://source-url.com)\n• [Fact 4] (https://source-url.com)\n• [Fact 5] (https://source-url.com)\n• [Fact 6] (https://source-url.com)\n\n–––––––––––––––––\nCRITICAL REMINDERS\n–––––––––––––––––\n\n- ALWAYS use both tools in sequence: generate_embedding → query_pinecone\n- Extract embedding array from generate_embedding response\n- Pass embedding array to query_pinecone\n- Use metadata.text and metadata.source from Pinecone results\n- Generate exactly 6 bullets with source citations\n- Base answers ONLY on retrieved content from Pinecone\n- If pinecone does not have relevant information, give ouptut as \"NOT AVAILABLE IN DATABASE\""
+        }
+      },
+      "type": "@n8n/n8n-nodes-langchain.agent",
+      "typeVersion": 3,
+      "position": [
+        2592,
+        -336
+      ],
+      "id": "4e9e22c0-9ea9-4484-b09e-50a212a03413",
+      "name": "RAG Agent"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Get the AI Agent output\nconst aiOutput = $input.item.json.output || $input.item.json.text || $input.item.json.response || '';\n\n// Extract bullet points (lines starting with •)\nconst lines = aiOutput.split('\\n');\nconst bulletPoints = [];\n\nfor (const line of lines) {\n  const trimmed = line.trim();\n  // Match lines that start with • and contain a URL in parentheses\n  if (trimmed.startsWith('•') && trimmed.includes('(') && trimmed.includes('http')) {\n    bulletPoints.push(trimmed);\n  }\n}\n\n// If we found bullet points, use them; otherwise try to extract from the text\nlet formattedResponse = '';\nif (bulletPoints.length > 0) {\n  // Use the extracted bullets (take first 6)\n  formattedResponse = bulletPoints.slice(0, 6).join('\\n');\n} else {\n  // Fallback: try to extract bullets using regex\n  const bulletRegex = /•[^\\n]+\\(https?:\\/\\/[^\\)]+\\)/g;\n  const matches = aiOutput.match(bulletRegex);\n  if (matches && matches.length > 0) {\n    formattedResponse = matches.slice(0, 6).join('\\n');\n  } else {\n    // Last resort: return the full output\n    formattedResponse = aiOutput;\n  }\n}\n\n// Ensure we have exactly 6 bullets (pad or trim if needed)\nconst finalBullets = formattedResponse.split('\\n').filter(line => line.trim().startsWith('•'));\nif (finalBullets.length < 6) {\n  // If we have fewer than 6, we might need to repeat or handle differently\n  // For now, just use what we have\n}\n\n// Return formatted response\nreturn {\n  json: {\n    formattedResponse: formattedResponse,\n    bulletCount: finalBullets.length,\n    originalOutput: aiOutput\n  }\n};"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2992,
+        -224
+      ],
+      "id": "66ada34a-d53f-4ea4-b5d5-b86b71537b8e",
+      "name": "Output formatter"
+    },
+    {
+      "parameters": {
+        "message": "=={{ $json.formattedResponse }}",
+        "waitUserReply": false,
+        "options": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.chat",
+      "typeVersion": 1,
+      "position": [
+        3216,
+        -336
+      ],
+      "id": "8106b40d-2356-4191-ae2e-7f5425df221d",
+      "name": "Respond to Chat1"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Get data from previous node\nconst validatedFields = $json.validated_fields || {};\nconst originalMessage = $json.originalMessage || '';\n\n// Format as clear text for AI Agent using validated_fields\nconst formattedText = `Fund House: ${validatedFields.fund_house || 'NOT PROVIDED'}\nFund Type: ${validatedFields.fund_type || 'NOT PROVIDED'}\nFees Details: ${validatedFields.fees_details || 'NOT PROVIDED'}\nOriginal Message: ${originalMessage}\nIs Complete: ${$json.is_complete || false}`;\n\nreturn {\n  json: {\n    formattedText: formattedText,\n    validated_fields: validatedFields,\n    originalMessage: originalMessage,\n    is_complete: $json.is_complete\n  }\n};\n"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2304,
+        -240
+      ],
+      "id": "27b5b9bc-8468-4411-ad17-cfb0e6c3eb36",
+      "name": "Formatter"
+    },
+    {
+      "parameters": {
+        "jsCode": "// MCP Preparation Node - Final Fixed Version\n// This node correctly extracts data from the workflow chain\n\n// Step 1: Get formattedResponse (6 bullets) - should be in current input\nconst formattedResponse = $json.formattedResponse || '';\n\n// Step 2: Try to get validated_fields from multiple sources\nlet validatedFields = $json.validated_fields || $json.validatedFields || {};\n\n// Step 3: Try to get originalMessage from multiple sources\nlet originalMessage = $json.originalMessage || $json.userQuery || $json.chatInput || '';\n\n// Step 4: Try to get sessionId\nlet sessionId = $json.sessionId || '';\n\n// Step 5: Walk back through input chain to find missing data\nconst inputChain = $input.all() || [];\nfor (const item of inputChain) {\n  const itemData = item.json || {};\n  \n  // Get validated_fields if not found yet\n  if (!validatedFields.fund_house && itemData.validated_fields) {\n    validatedFields = itemData.validated_fields;\n  }\n  if (!validatedFields.fund_house && itemData.validatedFields) {\n    validatedFields = itemData.validatedFields;\n  }\n  if (!validatedFields.fund_house && itemData.extracted_entities) {\n    // Convert extracted_entities to validated_fields format\n    validatedFields = {\n      fund_house: itemData.extracted_entities.fund_house || null,\n      fund_type: itemData.extracted_entities.fund_type || null,\n      fees_details: itemData.extracted_entities.fees_details || null\n    };\n  }\n  \n  // Get originalMessage if not found yet\n  if (!originalMessage && itemData.originalMessage) {\n    originalMessage = itemData.originalMessage;\n  }\n  if (!originalMessage && itemData.userQuery) {\n    originalMessage = itemData.userQuery;\n  }\n  if (!originalMessage && itemData.chatInput) {\n    originalMessage = itemData.chatInput;\n  }\n  \n  // Get sessionId if not found yet\n  if (!sessionId && itemData.sessionId) {\n    sessionId = itemData.sessionId;\n  }\n}\n\n// Step 6: Try to reference specific nodes by name (if they exist)\ntry {\n  const classifyNode = $('Classify Message');\n  if (classifyNode && classifyNode.item && !originalMessage) {\n    originalMessage = classifyNode.item.json.originalMessage || originalMessage;\n  }\n} catch (e) {\n  // Node reference failed, continue with what we have\n}\n\ntry {\n  const extractNode = $('Extract Entities') || $('Entity Extractor');\n  if (extractNode && extractNode.item && !validatedFields.fund_house) {\n    const extracted = extractNode.item.json.extracted_entities || extractNode.item.json.validated_fields;\n    if (extracted) {\n      validatedFields = extracted;\n    }\n  }\n} catch (e) {\n  // Node reference failed, continue with what we have\n}\n\n// Step 7: Extract field values with proper fallbacks\nconst fundHouse = validatedFields.fund_house || validatedFields.fundHouse || 'Not specified';\nconst fundType = validatedFields.fund_type || validatedFields.fundType || 'Not specified';\nconst feesDetails = validatedFields.fees_details || validatedFields.feesDetails || 'Not specified';\n\n// Step 8: Clean the formatted response\nconst cleanResponse = formattedResponse.trim();\n\n// Step 9: Get timestamp\nconst timestamp = new Date().toISOString();\nconst dateOnly = timestamp.split('T')[0];\n\n// Step 10: Format bullets for HTML email\nconst bulletsHTML = cleanResponse\n  .split('\\n')\n  .filter(line => line.trim().startsWith('•') || line.trim().startsWith('-'))\n  .map(bullet => {\n    const text = bullet.replace(/^[•\\-]\\s*/, '').trim();\n    return text ? `<li>${text}</li>` : '';\n  })\n  .filter(li => li) // Remove empty items\n  .join('\\n');\n\n// Step 11: Format email HTML\nconst emailHTML = `<html><body>\n<h2>Mutual Fund Query Log</h2>\n<p><strong>Timestamp:</strong> ${timestamp}</p>\n${sessionId ? `<p><strong>Session ID:</strong> ${sessionId}</p>` : ''}\n<p><strong>User Query:</strong> ${originalMessage || 'N/A'}</p>\n<p><strong>Fund House:</strong> ${fundHouse}</p>\n<p><strong>Fund Type:</strong> ${fundType}</p>\n<p><strong>Fees Details:</strong> ${feesDetails}</p>\n<h3>Response:</h3>\n${bulletsHTML ? `<ul>${bulletsHTML}</ul>` : `<p>${cleanResponse}</p>`}\n</body></html>`;\n\n// Step 12: Format email subject\nconst emailSubject = `Mutual Fund Query Log - ${dateOnly}`;\n\n// Step 13: Format Google Doc text (plain text)\nconst docText = `${timestamp}\\n\\n${sessionId ? `Session ID: ${sessionId}\\n` : ''}User Query: ${originalMessage || 'N/A'}\\nFund House: ${fundHouse}\\nFund Type: ${fundType}\\nFees Details: ${feesDetails}\\n\\nResponse:\\n${cleanResponse}\\n\\n---\\n`;\n\n// Step 14: Create loggingPrompt that includes the actual formatted data\n// This will be the user message in MCP Agent node\n// Include the actual values so the agent can use them directly\nconst loggingPrompt = `Log this mutual fund query interaction by calling both tools with the pre-formatted data below.\n\n**TASK:**\n1. Call \"Send a message in Gmail\" tool with:\n   - Subject: Use the emailSubject value below\n   - Message: Use the emailHTML value below\n\n2. Call \"Update a document in Google Docs\" tool with:\n   - Text: Use the docText value below\n\n**PRE-FORMATTED DATA (USE THESE EXACT VALUES):**\n\n=== EMAIL SUBJECT ===\n${emailSubject}\n\n=== EMAIL HTML (for Gmail Message parameter) ===\n${emailHTML}\n\n=== GOOGLE DOCS TEXT (for Google Docs Text parameter) ===\n${docText}\n\n**INSTRUCTIONS:**\n- Copy the emailSubject value exactly and use it for Gmail Subject parameter\n- Copy the emailHTML value exactly and use it for Gmail Message parameter\n- Copy the docText value exactly and use it for Google Docs Text parameter\n- Do NOT modify, format, or generate new content\n- Use the values exactly as shown above`;\n\n// Step 15: Return formatted data for MCP Agent\nreturn {\n  json: {\n    // This is what the MCP Agent node uses as user message\n    loggingPrompt: loggingPrompt,\n    \n    // These are the structured fields the MCP Agent can access via $json\n    emailHTML: emailHTML,\n    emailSubject: emailSubject,\n    docText: docText,\n    \n    // Also include structured data for reference\n    loggingData: {\n      timestamp: timestamp,\n      sessionId: sessionId,\n      userQuery: originalMessage,\n      validatedFields: {\n        fund_house: fundHouse,\n        fund_type: fundType,\n        fees_details: feesDetails\n      },\n      response: cleanResponse,\n      responseType: 'mutual_fund_fees_query'\n    },\n    \n    // Keep original fields for debugging\n    formattedResponse: cleanResponse,\n    originalMessage: originalMessage,\n    validated_fields: validatedFields,\n    sessionId: sessionId\n  }\n};\n\n"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        3216,
+        -128
+      ],
+      "id": "cbce6331-53b7-4c70-90bf-69cfbdb1cb09",
+      "name": "Prep MCP Agent"
+    },
+    {
+      "parameters": {
+        "endpointUrl": "http://localhost:5678/mcp/67964ed4-1ea9-4a8b-ad00-2de2a66f723f",
+        "options": {
+          "timeout": 60000
+        }
+      },
+      "type": "@n8n/n8n-nodes-langchain.mcpClientTool",
+      "typeVersion": 1.2,
+      "position": [
+        3584,
+        96
+      ],
+      "id": "1d92aee1-a1bd-4359-92f3-4fcdc1b1b18f",
+      "name": "MCP Client"
+    },
+    {
+      "parameters": {
+        "promptType": "define",
+        "text": "=={{ $json.loggingPrompt }}\n",
+        "options": {
+          "systemMessage": "You are a logging assistant. You have access to MCP tools that you MUST call to log this interaction.\n\n**AVAILABLE TOOLS (use these EXACT names with spaces):**\n1. \"Send a message in Gmail\" - Sends email via Gmail\n2. \"Update a document in Google Docs\" - Appends text to Google Document\n\n**CRITICAL: USE THE TOOL CALLING MECHANISM - DO NOT GENERATE XML TAGS OR TEXT**\n\n**YOUR USER MESSAGE CONTAINS:**\n- === EMAIL SUBJECT ===\n- === EMAIL HTML ===\n- === GOOGLE DOCS TEXT ===\n\n**WHAT TO DO:**\n\n1. Extract values from the === sections in your user message\n2. Call the tools using the tool calling mechanism (not XML tags, not text descriptions):\n   - Call \"Send a message in Gmail\" with Subject and Message parameters\n   - Call \"Update a document in Google Docs\" with text parameter (lowercase)\n\n**TOOL CALLS:**\n\n**Call \"Send a message in Gmail\":**\n- Parameter: Subject = [value from EMAIL SUBJECT section]\n- Parameter: Message = [value from EMAIL HTML section]\n\n**Call \"Update a document in Google Docs\":**\n- Parameter: text = [value from GOOGLE DOCS TEXT section]\n- IMPORTANT: Parameter name is lowercase \"text\", not \"Text\"\n\n**DO NOT:**\n- Write `<function_calls>` or `<invoke>` tags\n- Generate XML-like syntax\n- Describe what you would do\n- Use fake tags\n- Say \"I'll call\" - just CALL them\n\n**DO:**\n- Use the actual tool calling API/mechanism\n- Call tools by their exact names: \"Send a message in Gmail\" and \"Update a document in Google Docs\"\n- Pass parameters directly to the tools\n- Extract values from === sections and call both tools immediately\n\nExtract the values and call both tools now using the tool calling mechanism.\n"
+        }
+      },
+      "type": "@n8n/n8n-nodes-langchain.agent",
+      "typeVersion": 3,
+      "position": [
+        3440,
+        -128
+      ],
+      "id": "b3565037-3e29-4b55-a109-a4b2112360d8",
+      "name": "MCP agent"
+    },
+    {
+      "parameters": {
+        "path": "67964ed4-1ea9-4a8b-ad00-2de2a66f723f"
+      },
+      "type": "@n8n/n8n-nodes-langchain.mcpTrigger",
+      "typeVersion": 2,
+      "position": [
+        3456,
+        272
+      ],
+      "id": "016f81a8-4a4f-43dc-aaba-8c3f488ce8bb",
+      "name": "MCP Server Trigger",
+      "webhookId": "67964ed4-1ea9-4a8b-ad00-2de2a66f723f"
+    },
+    {
+      "parameters": {
+        "sendTo": "harikrish656@gmail.com",
+        "subject": "={{ /*n8n-auto-generated-fromAI-override*/ $fromAI('Subject', ``, 'string') }}",
+        "message": "={{ /*n8n-auto-generated-fromAI-override*/ $fromAI('Message', ``, 'string') }}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.gmailTool",
+      "typeVersion": 2.2,
+      "position": [
+        3456,
+        496
+      ],
+      "id": "116925de-a1e1-4271-83fb-426eb924d8ed",
+      "name": "Send a message in Gmail",
+      "webhookId": "c51feb92-961c-4490-bfea-b10149667eb6",
+      "credentials": {
+        "gmailOAuth2": {
+          "id": "6aDcRo1MoAxjPDk3",
+          "name": "Gmail account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "descriptionType": "manual",
+        "toolDescription": "Update a document in Google DocsUpdate a document in Google Docs\nAppend text to Google Document for logging.\nREQUIRED parameters:\n- \"text\" (string, plain text) - The text content to append\n- \"Simplify\" (boolean) - Set to false\nExample: {\"text\": \"2024-12-21\\nUser Query: ...\\n---\\n\", \"Simplify\": false}\nAlways use this tool to append log entries. You MUST include both \"text\" and \"Simplify\" parameters.",
+        "operation": "update",
+        "documentURL": "1SboOtFAqNsB9bHatbkmqovonRYlh4lRTcxVAhX_lNrI",
+        "simple": "={{ /*n8n-auto-generated-fromAI-override*/ $fromAI('Simplify', ``, 'boolean') }}",
+        "actionsUi": {
+          "actionFields": [
+            {
+              "action": "insert",
+              "text": "="
+            }
+          ]
+        }
+      },
+      "type": "n8n-nodes-base.googleDocsTool",
+      "typeVersion": 2,
+      "position": [
+        3744,
+        496
+      ],
+      "id": "85f1eb60-fd01-4240-a745-1e38bc143bd6",
+      "name": "Update a document in Google Docs",
+      "credentials": {
+        "googleDocsOAuth2Api": {
+          "id": "8XeN2cJeQsH6Zwtc",
+          "name": "Google Docs account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "// Get the AI Agent output\nconst aiOutput = $input.item.json.output || $input.item.json.text || $input.item.json.response || '';\n\n// Clean the output - remove any extra formatting\nconst cleanResponse = aiOutput.trim();\n\n// Return clean response\nreturn {\n  json: {\n    response: cleanResponse,\n    originalOutput: $input.item.json\n  }\n};"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2992,
+        176
+      ],
+      "id": "32e1bd68-d19a-49ef-ae96-3cc87831ed70",
+      "name": "Extract Response Text"
+    },
+    {
+      "parameters": {
+        "toolDescription": "Generate embedding vector for text queries using Sentence Transformers. \nConverts text into a 384-dimensional vector for Pinecone search.\n\nInput: JSON object with \"query\" field. Example: {\"query\": \"SBI Equity fund Exit load\"}\nOutput: JSON object with \"embedding\" array. Example: {\"embedding\": [0.1, 0.2, ...], \"dimension\": 384}\n\nUse this tool first to convert user queries into embeddings before searching Pinecone.",
+        "method": "POST",
+        "url": "http://192.168.1.9:8000/embed",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"text\": \"={{ $json.query }}\"\n}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequestTool",
+      "typeVersion": 4.3,
+      "position": [
+        2656,
+        -112
+      ],
+      "id": "12d5528e-cad1-4b77-85f5-38e2761f8d77",
+      "name": "Embed generator",
+      "notesInFlow": false
+    },
+    {
+      "parameters": {
+        "toolDescription": "Search Pinecone vector database using an embedding vector. \nRetrieves top relevant documents about mutual fund fees. \nUse this tool after generating an embedding with generate_embedding tool.\nInput: Embedding vector array (from generate_embedding tool)\nOutput: Array of matching documents with metadata and source URLs",
+        "method": "POST",
+        "url": "https://mutualfundfees-oialqiq.svc.aped-4627-b74a.pinecone.io/vectors/upsert",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "pineconeApi",
+        "sendQuery": true,
+        "specifyQuery": "json",
+        "jsonQuery": "={\n  \"type\": \"object\",\n  \"properties\": {\n    \"embedding\": {\n      \"type\": \"array\",\n      \"items\": {\n        \"type\": \"number\"\n      },\n      \"description\": \"The embedding vector (384 dimensions) from generate_embedding tool. This is the output from the previous tool.\"\n    },\n    \"topK\": {\n      \"type\": \"number\",\n      \"description\": \"Number of top results to retrieve (default: 5)\",\n      \"default\": 5\n    }\n  },\n  \"required\": [\"embedding\"]\n}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"vector\": \"={{ $json.embedding }}\",\n  \"topK\": 5,\n  \"includeMetadata\": true,\n  \"namespace\": \"mutual-fund-docs\"\n}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequestTool",
+      "typeVersion": 4.3,
+      "position": [
+        2784,
+        -112
+      ],
+      "id": "f18eb37d-524b-43c4-9938-76951ce359c8",
+      "name": "Query Pinecone",
+      "credentials": {
+        "pineconeApi": {
+          "id": "yQE6gmeThlHG8omJ",
+          "name": "PineconeApi account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "options": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.lmChatGoogleGemini",
+      "typeVersion": 1,
+      "position": [
+        3424,
+        32
+      ],
+      "id": "891e05b0-aca5-436b-b5d3-44256989eb36",
+      "name": "Google Gemini Chat Model",
+      "credentials": {
+        "googlePalmApi": {
+          "id": "WweIZSm3UAL8iwSP",
+          "name": "Google Gemini(PaLM) Api account"
+        }
+      }
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "When chat message received": {
+      "main": [
+        [
+          {
+            "node": "Normalizer",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Groq Chat Model1": {
+      "ai_languageModel": [
+        [
+          {
+            "node": "AI Agent",
+            "type": "ai_languageModel",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Validator": {
+      "main": [
+        [
+          {
+            "node": "If",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Normalizer": {
+      "main": [
+        [
+          {
+            "node": "AI Agent",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Merge",
+            "type": "main",
+            "index": 1
+          }
+        ]
+      ]
+    },
+    "AI Agent": {
+      "main": [
+        [
+          {
+            "node": "Parse Agent Output",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parse Agent Output": {
+      "main": [
+        [
+          {
+            "node": "Merge",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "State Merger Code": {
+      "main": [
+        [
+          {
+            "node": "Execute a SQL query",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Validator",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Load session state": {
+      "main": [
+        [
+          {
+            "node": "Normalise DB state",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Normalise DB state": {
+      "main": [
+        [
+          {
+            "node": "State Merger Code",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Merge": {
+      "main": [
+        [
+          {
+            "node": "Load session state",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Execute a SQL query": {
+      "main": [
+        []
+      ]
+    },
+    "If": {
+      "main": [
+        [
+          {
+            "node": "Formatter",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Parse missing fields",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parse missing fields": {
+      "main": [
+        [
+          {
+            "node": "Clarifying Question",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Groq Chat Model": {
+      "ai_languageModel": [
+        [
+          {
+            "node": "Clarifying Question",
+            "type": "ai_languageModel",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Groq Chat Model2": {
+      "ai_languageModel": [
+        [
+          {
+            "node": "RAG Agent",
+            "type": "ai_languageModel",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Clarifying Question": {
+      "main": [
+        [
+          {
+            "node": "Extract Response Text",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "RAG Agent": {
+      "main": [
+        [
+          {
+            "node": "Output formatter",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Output formatter": {
+      "main": [
+        [
+          {
+            "node": "Respond to Chat1",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Prep MCP Agent",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Formatter": {
+      "main": [
+        [
+          {
+            "node": "RAG Agent",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prep MCP Agent": {
+      "main": [
+        [
+          {
+            "node": "MCP agent",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "MCP Client": {
+      "ai_tool": [
+        [
+          {
+            "node": "MCP agent",
+            "type": "ai_tool",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Send a message in Gmail": {
+      "ai_tool": [
+        [
+          {
+            "node": "MCP Server Trigger",
+            "type": "ai_tool",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Update a document in Google Docs": {
+      "ai_tool": [
+        [
+          {
+            "node": "MCP Server Trigger",
+            "type": "ai_tool",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Extract Response Text": {
+      "main": [
+        [
+          {
+            "node": "Respond to Chat",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Embed generator": {
+      "ai_tool": [
+        [
+          {
+            "node": "RAG Agent",
+            "type": "ai_tool",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Query Pinecone": {
+      "ai_tool": [
+        [
+          {
+            "node": "RAG Agent",
+            "type": "ai_tool",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Google Gemini Chat Model": {
+      "ai_languageModel": [
+        [
+          {
+            "node": "MCP agent",
+            "type": "ai_languageModel",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": true,
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "versionId": "23e378c8-5d3f-4760-b1da-f39776663900",
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": "3a69dbac13889924329585de8b43b5e0cf6b20f0c42aab82a097253f06f2a857"
+  },
+  "id": "j6BsBGzEe5Eb576T",
+  "tags": []
+}
